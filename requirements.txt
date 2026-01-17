@@ -1,0 +1,10 @@
+streamlit
+pandas
+openai
+anthropic
+google-generativeai
+requests
+plotly
+watchdog
+beautifulsoup4
+google-search-results
