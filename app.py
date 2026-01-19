@@ -366,7 +366,7 @@ Do not number them, just provide the raw queries one per line."""
         try:
             client = anthropic.Anthropic(api_key=api_keys['anthropic'])
             message = client.messages.create(
-                model="claude-3-5-sonnet-20240620",
+                claude-3-haiku-20240307",
                 max_tokens=1000,
                 temperature=0.8,
                 system=system_prompt,
@@ -687,7 +687,7 @@ Context: The user's brand is "{brand_name}" and their competitor is "{competitor
         contextualized_prompt = f"[Context: User in {country}] {system_instruction}\n\nUser question: {prompt}"
 
         message = client.messages.create(
-            model="claude-3-5-sonnet-20240620",
+            claude-3-haiku-20240307",
             max_tokens=1000,
             messages=[
                 {"role": "user", "content": contextualized_prompt}
@@ -2059,7 +2059,7 @@ Write naturally and comprehensively. This is the IDEAL answer."""
                             # Use Anthropic API
                             client = anthropic.Anthropic(api_key=st.session_state.api_keys['anthropic'])
                             ideal_response = client.messages.create(
-                                model="claude-3-5-sonnet-20240620",
+                                claude-3-haiku-20240307",
                                 max_tokens=1500,
                                 temperature=0.7,
                                 system="You are a GEO expert who creates perfect, comprehensive answers.",
@@ -2144,7 +2144,7 @@ Focus on concrete gaps. The Score should reflect how well the user content match
                                 # Use Anthropic API
                                 client = anthropic.Anthropic(api_key=st.session_state.api_keys['anthropic'])
                                 comparison_response = client.messages.create(
-                                    model="claude-3-5-sonnet-20240620",
+                                    claude-3-haiku-20240307",
                                     max_tokens=1000,
                                     temperature=0.3,
                                     system="You are a GEO expert that returns valid JSON analysis.",
