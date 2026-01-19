@@ -366,7 +366,7 @@ Do not number them, just provide the raw queries one per line."""
         try:
             client = anthropic.Anthropic(api_key=api_keys['anthropic'])
             message = client.messages.create(
-                model="claude-3-5-sonnet-latest"",
+                model="claude-3-5-sonnet-latest",
                 max_tokens=1000,
                 temperature=0.8,
                 system=system_prompt,
