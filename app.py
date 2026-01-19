@@ -324,7 +324,7 @@ COUNTRY_LIST = [
 # ============================================================================
 def generate_prompts_with_llm(topic, country, language, api_keys):
     """
-    Generate prompts using OpenAI or Anthropic API.
+    Generate prompts using OpenAI or Google Gemini API.
     Returns a list of 20 queries or None if failed.
     """
     system_prompt = f"""You are an expert in GEO (Generative Engine Optimization).
@@ -361,26 +361,36 @@ Do not number them, just provide the raw queries one per line."""
             st.error(f"OpenAI API Error: {str(e)}")
             return None
 
-    # Try Anthropic if OpenAI not available
-    elif api_keys['anthropic'] and anthropic:
+    # Try Gemini if OpenAI not available
+    elif api_keys['gemini'] and genai:
         try:
-            client = anthropic.Anthropic(api_key=api_keys['anthropic'])
-            message = client.messages.create(
-                "claude-3-haiku-20240307",
-                max_tokens=1000,
-                temperature=0.8,
-                system=system_prompt,
-                messages=[
-                    {"role": "user", "content": f"Generate queries for: {topic}"}
-                ]
-            )
+            genai.configure(api_key=api_keys['gemini'])
+            model = genai.GenerativeModel('gemini-pro')
+
+            # Create the full prompt
+            full_prompt = f"{system_prompt}\n\nGenerate queries for: {topic}"
+
+            response = model.generate_content(full_prompt)
+
+            # Create a mock object to mimic Anthropic's response structure
+            # This allows message.content[0].text to work
+            class MockContent:
+                def __init__(self, text):
+                    self.text = text
+
+            class MockMessage:
+                def __init__(self, response_text):
+                    self.content = [MockContent(response_text)]
+
+            message = MockMessage(response.text.strip())
+
             queries = message.content[0].text.strip().split('\n')
             # Clean up queries
             queries = [q.strip() for q in queries if q.strip()]
             queries = [q.lstrip('0123456789.-)> ') for q in queries]
             return queries[:20]
         except Exception as e:
-            st.error(f"Anthropic API Error: {str(e)}")
+            st.error(f"Gemini API Error: {str(e)}")
             return None
 
     return None
@@ -687,7 +697,7 @@ Context: The user's brand is "{brand_name}" and their competitor is "{competitor
         contextualized_prompt = f"[Context: User in {country}] {system_instruction}\n\nUser question: {prompt}"
 
         message = client.messages.create(
-            "claude-3-haiku-20240307",
+            model="claude-3-haiku-20240307",
             max_tokens=1000,
             messages=[
                 {"role": "user", "content": contextualized_prompt}
@@ -1054,11 +1064,11 @@ with tab1:
             st.error("⚠️ Please enter at least one topic.")
         else:
             # Check if API keys are available
-            has_api_key = bool(st.session_state.api_keys['openai'] or st.session_state.api_keys['anthropic'])
+            has_api_key = bool(st.session_state.api_keys['openai'] or st.session_state.api_keys['gemini'])
 
             if not has_api_key:
-                st.warning("🤖 **No API Key detected!** Please enter your OpenAI or Anthropic API Key in the sidebar to activate the AI brain and generate intelligent queries.")
-                st.info("💡 **Tip:** Get your API keys from:\n- OpenAI: https://platform.openai.com/api-keys\n- Anthropic: https://console.anthropic.com/")
+                st.warning("🤖 **No API Key detected!** Please enter your OpenAI or Google Gemini API Key in the sidebar to activate the AI brain and generate intelligent queries.")
+                st.info("💡 **Tip:** Get your API keys from:\n- OpenAI: https://platform.openai.com/api-keys\n- Google Gemini: https://aistudio.google.com/app/apikey")
             else:
                 topics = [t.strip() for t in topics_input.split('\n') if t.strip()]
 
@@ -2059,7 +2069,7 @@ Write naturally and comprehensively. This is the IDEAL answer."""
                             # Use Anthropic API
                             client = anthropic.Anthropic(api_key=st.session_state.api_keys['anthropic'])
                             ideal_response = client.messages.create(
-                                "claude-3-haiku-20240307",
+                                model="claude-3-haiku-20240307",
                                 max_tokens=1500,
                                 temperature=0.7,
                                 system="You are a GEO expert who creates perfect, comprehensive answers.",
@@ -2144,7 +2154,7 @@ Focus on concrete gaps. The Score should reflect how well the user content match
                                 # Use Anthropic API
                                 client = anthropic.Anthropic(api_key=st.session_state.api_keys['anthropic'])
                                 comparison_response = client.messages.create(
-                                    "claude-3-haiku-20240307",
+                                    model="claude-3-haiku-20240307",
                                     max_tokens=1000,
                                     temperature=0.3,
                                     system="You are a GEO expert that returns valid JSON analysis.",

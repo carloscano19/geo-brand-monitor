@@ -2,10 +2,9 @@ streamlit
 pandas
 openai
 anthropic>=0.30.0
-google-generativeai
+google-generativeai>=0.7.0
 requests
 plotly
 watchdog
 beautifulsoup4
 google-search-results
-colorama
