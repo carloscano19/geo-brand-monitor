@@ -368,7 +368,6 @@ Do not number them, just provide the raw queries one per line."""
             genai.configure(api_key=api_keys['gemini'])
             model = genai.GenerativeModel('gemini-pro')
 
-            
             # Create the full prompt
             full_prompt = f"{system_prompt}\n\nGenerate queries for: {topic}"
 
@@ -1014,6 +1013,21 @@ with tab1:
     st.header("🏭 Prompt Generator")
     st.markdown("Generate search query variations from your topics to test brand visibility across LLM models.")
 
+    # Display persisted data if it exists
+    if 'df_prompts' in st.session_state and st.session_state.df_prompts is not None:
+        st.success(f"✅ {len(st.session_state.df_prompts)} AI-powered prompt variations loaded!")
+        st.dataframe(st.session_state.df_prompts, use_container_width=True, height=400)
+
+        # Download button for persisted data
+        csv = st.session_state.df_prompts.to_csv(index=False)
+        st.download_button(
+            label="📥 Download Prompts as CSV",
+            data=csv,
+            file_name=f"ai_prompts_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+            mime="text/csv"
+        )
+        st.markdown("---")
+
     col1, col2 = st.columns([2, 1])
 
     with col1:
@@ -1099,6 +1113,9 @@ with tab1:
                 if all_generated_prompts:
                     df_prompts = pd.DataFrame(all_generated_prompts)
 
+                    # Save to session state for persistence
+                    st.session_state.df_prompts = df_prompts
+
                     st.success(f"✅ Generated {len(all_generated_prompts)} AI-powered prompt variations!")
 
                     st.dataframe(df_prompts, use_container_width=True, height=400)
@@ -1120,6 +1137,287 @@ with tab1:
 with tab2:
     st.header("🌍 Market Monitor (Audit)")
     st.markdown("Test your prompts across multiple LLM models and geographic regions to monitor brand visibility.")
+
+    # Display persisted data if it exists
+    if 'tab2_results' in st.session_state and 'tab2_df_results' in st.session_state:
+        if st.session_state.tab2_results and st.session_state.tab2_df_results is not None:
+            results = st.session_state.tab2_results
+            df_results = st.session_state.tab2_df_results
+
+            # Calculate KPIs from persisted data
+            total_tests = len([r for r in results if r['Brand Mentioned?'] != 'Error'])
+            brand_mentions = sum(1 for r in results if r['Brand Mentioned?'] == 'Yes')
+            source_citations = sum(r['Source Count'] for r in results if r['Brand Mentioned?'] != 'Error')
+            share_of_voice = (brand_mentions / total_tests * 100) if total_tests > 0 else 0
+            citation_rate = (source_citations / total_tests * 100) if total_tests > 0 else 0
+
+            # Display KPI Cards
+            st.markdown("### 📊 Audit Summary (Saved Results)")
+            kpi_col1, kpi_col2, kpi_col3, kpi_col4 = st.columns(4)
+
+            with kpi_col1:
+                st.markdown(f"""
+                <div class="kpi-card">
+                    <div class="kpi-label">Share of Voice</div>
+                    <div class="kpi-value">{share_of_voice:.1f}%</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+            with kpi_col2:
+                st.markdown(f"""
+                <div class="kpi-card">
+                    <div class="kpi-label">Brand Mentions</div>
+                    <div class="kpi-value">{brand_mentions}/{total_tests}</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+            with kpi_col3:
+                st.markdown(f"""
+                <div class="kpi-card">
+                    <div class="kpi-label">Source Citations</div>
+                    <div class="kpi-value">{source_citations}</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+            with kpi_col4:
+                st.markdown(f"""
+                <div class="kpi-card">
+                    <div class="kpi-label">Avg Citations</div>
+                    <div class="kpi-value">{citation_rate:.1f}</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+            st.markdown("---")
+
+            # Visual Analytics Section
+            st.markdown("### 📊 Visual Analytics")
+
+            chart_col1, chart_col2, chart_col3 = st.columns(3)
+
+            with chart_col1:
+                # Chart 1: Share of Voice - Brand vs Competitor Comparison
+                if results:
+                    model_stats = []
+                    for model in set(r['Model'] for r in results):
+                        model_results = [r for r in results if r['Model'] == model and r['Brand Mentioned?'] != 'Error']
+                        if model_results:
+                            brand_mentions_model = sum(1 for r in model_results if r['Brand Mentioned?'] == 'Yes')
+                            competitor_mentions = sum(1 for r in model_results if r.get('Competitor Mentioned?') == 'Yes')
+                            total = len(model_results)
+                            brand_pct = (brand_mentions_model / total * 100) if total > 0 else 0
+                            competitor_pct = (competitor_mentions / total * 100) if total > 0 else 0
+                            model_stats.append({
+                                'Model': model,
+                                'Brand': brand_pct,
+                                'Competitor': competitor_pct
+                            })
+
+                    if model_stats:
+                        models = [s['Model'] for s in model_stats]
+                        brand_values = [s['Brand'] for s in model_stats]
+                        competitor_values = [s['Competitor'] for s in model_stats]
+
+                        fig1 = go.Figure(data=[
+                            go.Bar(name='My Brand', x=models, y=brand_values, marker_color='#10b981',
+                                   text=[f"{v:.1f}%" for v in brand_values], textposition='outside'),
+                            go.Bar(name='Competitor', x=models, y=competitor_values, marker_color='#ef4444',
+                                   text=[f"{v:.1f}%" for v in competitor_values], textposition='outside')
+                        ])
+
+                        fig1.update_layout(
+                            title="Share of Voice: Brand vs Competitor",
+                            xaxis_title="Model",
+                            yaxis_title="Mention Rate (%)",
+                            barmode='group',
+                            plot_bgcolor='white',
+                            paper_bgcolor='white',
+                            font=dict(color='#111827', size=11),
+                            height=300,
+                            margin=dict(l=20, r=20, t=40, b=20),
+                            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                        )
+                        st.plotly_chart(fig1, use_container_width=True)
+                else:
+                    st.info("No data yet")
+
+            with chart_col2:
+                # Chart 2: Sentiment Distribution
+                if results:
+                    sentiment_counts = {
+                        'Positive': 0,
+                        'Neutral': 0,
+                        'Negative': 0
+                    }
+
+                    for r in results:
+                        if r.get('Sentiment') and r['Sentiment'] != 'Error':
+                            sentiment = r['Sentiment']
+                            if sentiment in sentiment_counts:
+                                sentiment_counts[sentiment] += 1
+
+                    if sum(sentiment_counts.values()) > 0:
+                        fig2 = go.Figure(data=[go.Pie(
+                            labels=list(sentiment_counts.keys()),
+                            values=list(sentiment_counts.values()),
+                            marker=dict(colors=['#10b981', '#fbbf24', '#ef4444']),
+                            hole=0.3,
+                            textinfo='label+percent',
+                            textposition='auto'
+                        )])
+
+                        fig2.update_layout(
+                            title="Sentiment Distribution",
+                            plot_bgcolor='white',
+                            paper_bgcolor='white',
+                            font=dict(color='#111827', size=11),
+                            height=300,
+                            margin=dict(l=20, r=20, t=40, b=20),
+                            showlegend=True,
+                            legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5)
+                        )
+                        st.plotly_chart(fig2, use_container_width=True)
+                    else:
+                        st.info("No sentiment data yet")
+                else:
+                    st.info("No data yet")
+
+            with chart_col3:
+                # Chart 3: Top Cited Sources
+                if results:
+                    # Extract all domains from citations
+                    all_domains = []
+                    for r in results:
+                        if r['Brand Mentioned?'] != 'Error' and r.get('Full Citations'):
+                            for citation in r['Full Citations']:
+                                domain = extract_domain(citation)
+                                if domain:
+                                    all_domains.append(domain)
+
+                    if all_domains:
+                        # Count domain frequencies
+                        domain_counts = Counter(all_domains)
+                        top_sources = domain_counts.most_common(5)
+
+                        source_data = pd.DataFrame(top_sources, columns=['Domain', 'Count'])
+
+                        fig3 = px.bar(
+                            source_data,
+                            y='Domain',
+                            x='Count',
+                            orientation='h',
+                            title='Top 5 Cited Sources',
+                            color='Count',
+                            color_continuous_scale=['#764ba2', '#667eea']
+                        )
+                        fig3.update_layout(
+                            plot_bgcolor='white',
+                            paper_bgcolor='white',
+                            font=dict(color='#111827', size=11),
+                            height=300,
+                            margin=dict(l=20, r=20, t=40, b=20),
+                            showlegend=False,
+                            yaxis={'categoryorder': 'total ascending'}
+                        )
+                        st.plotly_chart(fig3, use_container_width=True)
+                    else:
+                        st.info("No citations found")
+                else:
+                    st.info("No data yet")
+
+            st.markdown("---")
+
+            # Detailed Results
+            st.markdown("### 📋 Detailed Results")
+
+            if results:
+                for idx, result in enumerate(results):
+                    # Create summary for expander label
+                    if result['Brand Mentioned?'] == 'Yes':
+                        mention_emoji = "✅"
+                        mention_color = "🟢"
+                    elif result['Brand Mentioned?'] == 'No':
+                        mention_emoji = "❌"
+                        mention_color = "🔴"
+                    else:
+                        mention_emoji = "⚠️"
+                        mention_color = "🟡"
+
+                    summary = f"{mention_emoji} {result['Model']} | {result['Prompt']} | {mention_color}"
+
+                    with st.expander(summary, expanded=False):
+                        col_a, col_b = st.columns(2)
+
+                        with col_a:
+                            st.markdown(f"**🤖 Model:** {result['Model']}")
+                            st.markdown(f"**🌍 Country:** {result['Country']}")
+                            st.markdown(f"**🎯 Brand Mentioned:** {result['Brand Mentioned?']}")
+                            st.markdown(f"**🏆 Competitor Mentioned:** {result.get('Competitor Mentioned?', 'N/A')}")
+
+                        with col_b:
+                            st.markdown(f"**💭 Sentiment:** {result.get('Sentiment', 'N/A')}")
+                            st.markdown(f"**📊 Source Count:** {result['Source Count']}")
+                            st.markdown(f"**🔗 Top Sources:** {result['Sources List']}")
+
+                        st.markdown("---")
+
+                        # GEO Advice in styled box
+                        if result.get('GEO Advice') and result['GEO Advice'] != 'No advice provided':
+                            st.warning(f"🤖 **GEO ADVICE:** {result['GEO Advice']}")
+
+                        st.markdown(f"**❓ Full Prompt:**")
+                        st.info(result['Full Prompt'])
+
+                        st.markdown("**💬 Full Answer:**")
+                        st.markdown(result['Full Answer'])
+
+            st.markdown("---")
+
+            # Download and Save buttons
+            col_download, col_save = st.columns(2)
+
+            with col_download:
+                csv = df_results.to_csv(index=False)
+                st.download_button(
+                    label="📥 Download Results as CSV",
+                    data=csv,
+                    file_name=f"brand_audit_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                    mime="text/csv",
+                    key="download_tab2_persisted"
+                )
+
+            with col_save:
+                if st.button("💾 Save to History", key="save_tab2_persisted"):
+                    if not st.session_state.github_token:
+                        st.warning("⚠️ Please enter your GitHub Personal Token in the sidebar.")
+                    elif not st.session_state.github_repo:
+                        st.warning("⚠️ Please enter your GitHub Repo Name in the sidebar.")
+                    else:
+                        # Get first prompt for keyword
+                        first_prompt = results[0]['Full Prompt'] if results else "Market Audit"
+
+                        # Prepare data row for GitHub
+                        data_row = {
+                            'date': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                            'brand': st.session_state.brand_name if st.session_state.brand_name else 'N/A',
+                            'keyword': f"Market Audit: {first_prompt[:50]}",
+                            'model': 'Multi-Model',
+                            'score': share_of_voice,
+                            'missing_topics': f"Mentions: {brand_mentions}/{total_tests}"
+                        }
+
+                        with st.spinner("💾 Saving to GitHub..."):
+                            success, message = save_to_github(
+                                data_row,
+                                st.session_state.github_repo,
+                                st.session_state.github_token
+                            )
+
+                            if success:
+                                st.success(f"✅ {message}")
+                            else:
+                                st.error(f"❌ {message}")
+
+            st.markdown("---")
 
     # Input section
     col1, col2 = st.columns([2, 1])
@@ -1249,6 +1547,10 @@ with tab2:
 
             # Create results dataframe
             df_results = pd.DataFrame(results)
+
+            # Save to session state for persistence
+            st.session_state.tab2_results = results
+            st.session_state.tab2_df_results = df_results
 
             # Calculate KPIs based on REAL data
             total_tests = len([r for r in results if r['Brand Mentioned?'] != 'Error'])
@@ -1484,14 +1786,50 @@ with tab2:
 
             st.markdown("---")
 
-            # Download button
-            csv = df_results.to_csv(index=False)
-            st.download_button(
-                label="📥 Download Results as CSV",
-                data=csv,
-                file_name=f"brand_audit_{country_selected}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                mime="text/csv"
-            )
+            # Download and Save buttons
+            col_download_new, col_save_new = st.columns(2)
+
+            with col_download_new:
+                csv = df_results.to_csv(index=False)
+                st.download_button(
+                    label="📥 Download Results as CSV",
+                    data=csv,
+                    file_name=f"brand_audit_{country_selected}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                    mime="text/csv",
+                    key="download_tab2_new"
+                )
+
+            with col_save_new:
+                if st.button("💾 Save to History", key="save_tab2_new"):
+                    if not st.session_state.github_token:
+                        st.warning("⚠️ Please enter your GitHub Personal Token in the sidebar.")
+                    elif not st.session_state.github_repo:
+                        st.warning("⚠️ Please enter your GitHub Repo Name in the sidebar.")
+                    else:
+                        # Get first prompt for keyword
+                        first_prompt = results[0]['Full Prompt'] if results else "Market Audit"
+
+                        # Prepare data row for GitHub
+                        data_row = {
+                            'date': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                            'brand': st.session_state.brand_name if st.session_state.brand_name else 'N/A',
+                            'keyword': f"Market Audit: {first_prompt[:50]}",
+                            'model': 'Multi-Model',
+                            'score': share_of_voice,
+                            'missing_topics': f"Mentions: {brand_mentions}/{total_tests}"
+                        }
+
+                        with st.spinner("💾 Saving to GitHub..."):
+                            success, message = save_to_github(
+                                data_row,
+                                st.session_state.github_repo,
+                                st.session_state.github_token
+                            )
+
+                            if success:
+                                st.success(f"✅ {message}")
+                            else:
+                                st.error(f"❌ {message}")
 
 # ============================================================================
 # TAB 3: GOOGLE AI MONITOR
