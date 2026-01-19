@@ -364,8 +364,9 @@ Do not number them, just provide the raw queries one per line."""
     # Try Gemini if OpenAI not available
     elif api_keys['gemini'] and genai:
         try:
+            st.warning(f"Debug: Google Lib Version: {genai.__version__}")
             genai.configure(api_key=api_keys['gemini'])
-            model = genai.GenerativeModel('gemini-pro')
+            model = genai.GenerativeModel('gemini-1.5-flash')
 
             # Create the full prompt
             full_prompt = f"{system_prompt}\n\nGenerate queries for: {topic}"
