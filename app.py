@@ -7,6 +7,7 @@ from datetime import datetime
 import os
 import re
 import json
+import base64
 from urllib.parse import urlparse
 from collections import Counter
 import requests
@@ -229,6 +230,28 @@ with st.sidebar:
         value=st.session_state.competitor_name,
         placeholder="e.g., Socios.com",
         help="Name of your main competitor to track mentions"
+    )
+
+    st.markdown("---")
+
+    st.subheader("💾 Database (GitHub)")
+    if 'github_token' not in st.session_state:
+        st.session_state.github_token = ""
+    if 'github_repo' not in st.session_state:
+        st.session_state.github_repo = "carloscano19/geo-brand-monitor"
+
+    st.session_state.github_token = st.text_input(
+        "GitHub Personal Token",
+        value=st.session_state.github_token,
+        type="password",
+        help="Your GitHub Personal Access Token for saving audit history"
+    )
+
+    st.session_state.github_repo = st.text_input(
+        "Repo Name",
+        value=st.session_state.github_repo,
+        placeholder="username/repo-name",
+        help="GitHub repository in format: username/repo-name"
     )
 
     st.markdown("---")
@@ -840,6 +863,129 @@ def run_audit(prompts, models, country, api_keys):
 
 
 # ============================================================================
+# GITHUB STORAGE HELPER FUNCTIONS
+# ============================================================================
+def save_to_github(data_row, repo, token):
+    """
+    Save a new row to history.csv in the GitHub repository.
+
+    Args:
+        data_row (dict): Dictionary with keys: date, brand, keyword, model, score, missing_topics
+        repo (str): GitHub repository in format 'username/repo'
+        token (str): GitHub Personal Access Token
+
+    Returns:
+        tuple: (success: bool, message: str)
+    """
+    if not token or not repo:
+        return False, "GitHub token and repo are required"
+
+    # GitHub API endpoint
+    api_url = f"https://api.github.com/repos/{repo}/contents/history.csv"
+
+    headers = {
+        "Authorization": f"token {token}",
+        "Accept": "application/vnd.github.v3+json"
+    }
+
+    try:
+        # Try to fetch existing file
+        response = requests.get(api_url, headers=headers)
+
+        if response.status_code == 200:
+            # File exists, get content and SHA
+            file_data = response.json()
+            content = base64.b64decode(file_data['content']).decode('utf-8')
+            sha = file_data['sha']
+
+            # Append new row
+            new_row = f"{data_row['date']},{data_row['brand']},{data_row['keyword']},{data_row['model']},{data_row['score']},\"{data_row['missing_topics']}\"\n"
+            updated_content = content + new_row
+
+        elif response.status_code == 404:
+            # File doesn't exist, create with header
+            sha = None
+            header = "date,brand,keyword,model,score,missing_topics\n"
+            new_row = f"{data_row['date']},{data_row['brand']},{data_row['keyword']},{data_row['model']},{data_row['score']},\"{data_row['missing_topics']}\"\n"
+            updated_content = header + new_row
+
+        else:
+            return False, f"Error fetching file: {response.status_code}"
+
+        # Encode updated content
+        encoded_content = base64.b64encode(updated_content.encode('utf-8')).decode('utf-8')
+
+        # Prepare commit data
+        commit_data = {
+            "message": f"Add audit result for {data_row['keyword']}",
+            "content": encoded_content
+        }
+
+        if sha:
+            commit_data["sha"] = sha
+
+        # Update/create file
+        update_response = requests.put(api_url, headers=headers, json=commit_data)
+
+        if update_response.status_code in [200, 201]:
+            return True, "Successfully saved to GitHub"
+        else:
+            return False, f"Error updating file: {update_response.status_code} - {update_response.text}"
+
+    except Exception as e:
+        return False, f"Exception: {str(e)}"
+
+
+def load_from_github(repo, token):
+    """
+    Load history.csv from GitHub repository.
+
+    Args:
+        repo (str): GitHub repository in format 'username/repo'
+        token (str): GitHub Personal Access Token
+
+    Returns:
+        tuple: (success: bool, data: pd.DataFrame or error message)
+    """
+    if not token or not repo:
+        return False, "GitHub token and repo are required"
+
+    # GitHub API endpoint
+    api_url = f"https://api.github.com/repos/{repo}/contents/history.csv"
+
+    headers = {
+        "Authorization": f"token {token}",
+        "Accept": "application/vnd.github.v3+json"
+    }
+
+    try:
+        response = requests.get(api_url, headers=headers)
+
+        if response.status_code == 200:
+            # File exists, decode content
+            file_data = response.json()
+            content = base64.b64decode(file_data['content']).decode('utf-8')
+
+            # Parse CSV
+            from io import StringIO
+            df = pd.read_csv(StringIO(content))
+
+            # Convert date column to datetime
+            if 'date' in df.columns:
+                df['date'] = pd.to_datetime(df['date'])
+
+            return True, df
+
+        elif response.status_code == 404:
+            return False, "History file not found. Save some audits first!"
+        else:
+            return False, f"Error: {response.status_code}"
+
+    except Exception as e:
+        return False, f"Exception: {str(e)}"
+
+
+# ============================================================================
 # MAIN CONTENT
 # ============================================================================
 st.title("🌍 GEO/AIO Brand Monitor - Ultimate Edition")
@@ -847,7 +993,7 @@ st.markdown("**Advanced LLM Brand Monitoring with Sentiment Analysis, Competitor
 st.markdown("---")
 
 # Create tabs
-tab1, tab2, tab3, tab4 = st.tabs(["🏭 PROMPT GENERATOR", "🌍 MARKET MONITOR (AUDIT)", "🔍 GOOGLE AI MONITOR", "✨ GEO CONTENT AUDITOR"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["🏭 PROMPT GENERATOR", "🌍 MARKET MONITOR (AUDIT)", "🔍 GOOGLE AI MONITOR", "✨ GEO CONTENT AUDITOR", "📈 History"])
 
 # ============================================================================
 # TAB 1: PROMPT GENERATOR
@@ -2157,18 +2303,170 @@ Focus on concrete gaps. The Score should reflect how well the user content match
                             df_report = pd.DataFrame([report_data])
                             csv_report = df_report.to_csv(index=False)
 
-                            st.download_button(
-                                label="📥 Download Audit Report as CSV",
-                                data=csv_report,
-                                file_name=f"content_audit_{target_keyword.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                                mime="text/csv"
-                            )
+                            col_btn1, col_btn2 = st.columns(2)
+
+                            with col_btn1:
+                                st.download_button(
+                                    label="📥 Download Audit Report as CSV",
+                                    data=csv_report,
+                                    file_name=f"content_audit_{target_keyword.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                                    mime="text/csv"
+                                )
+
+                            with col_btn2:
+                                if st.button("💾 Save to History", key="save_to_history"):
+                                    if not st.session_state.github_token:
+                                        st.warning("⚠️ Please enter your GitHub Personal Token in the sidebar.")
+                                    elif not st.session_state.github_repo:
+                                        st.warning("⚠️ Please enter your GitHub Repo Name in the sidebar.")
+                                    else:
+                                        # Prepare data row for GitHub
+                                        data_row = {
+                                            'date': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                                            'brand': st.session_state.brand_name if st.session_state.brand_name else 'N/A',
+                                            'keyword': target_keyword,
+                                            'model': auditor_model,
+                                            'score': score,
+                                            'missing_topics': ', '.join(missing_topics) if missing_topics else 'None'
+                                        }
+
+                                        with st.spinner("💾 Saving to GitHub..."):
+                                            success, message = save_to_github(
+                                                data_row,
+                                                st.session_state.github_repo,
+                                                st.session_state.github_token
+                                            )
+
+                                            if success:
+                                                st.success(f"✅ {message}")
+                                            else:
+                                                st.error(f"❌ {message}")
 
                         except json.JSONDecodeError as e:
                             st.error(f"⚠️ Error parsing analysis JSON: {str(e)}")
                             st.info(f"Raw response: {analysis_text}")
                         except Exception as e:
                             st.error(f"⚠️ Error analyzing content: {str(e)}")
+
+# ============================================================================
+# TAB 5: HISTORY
+# ============================================================================
+with tab5:
+    st.header("📈 History")
+    st.markdown("**View your audit history and track content scores over time**")
+    st.markdown("---")
+
+    # Info box
+    st.info("""
+    ### 📊 How History Works
+    1. **Save Audits:** After running a content audit in Tab 4, click "💾 Save to History" to store the results in GitHub.
+    2. **Refresh Data:** Click the button below to load your audit history from GitHub.
+    3. **Visualize Trends:** See how your content scores change over time across different keywords and models.
+    """)
+
+    st.markdown("---")
+
+    # Refresh button
+    if st.button("🔄 Refresh Data", key="refresh_history"):
+        if not st.session_state.github_token:
+            st.warning("⚠️ Please enter your GitHub Personal Token in the sidebar.")
+        elif not st.session_state.github_repo:
+            st.warning("⚠️ Please enter your GitHub Repo Name in the sidebar.")
+        else:
+            with st.spinner("📥 Loading history from GitHub..."):
+                success, result = load_from_github(
+                    st.session_state.github_repo,
+                    st.session_state.github_token
+                )
+
+                if success:
+                    df_history = result
+
+                    if df_history.empty:
+                        st.warning("📭 No audit history found. Run some audits in Tab 4 and save them!")
+                    else:
+                        st.success(f"✅ Loaded {len(df_history)} audit records")
+
+                        # Display summary metrics
+                        st.markdown("### 📊 Summary Metrics")
+
+                        metric_col1, metric_col2, metric_col3, metric_col4 = st.columns(4)
+
+                        with metric_col1:
+                            avg_score = df_history['score'].mean()
+                            st.metric("Average Score", f"{avg_score:.1f}/100")
+
+                        with metric_col2:
+                            total_audits = len(df_history)
+                            st.metric("Total Audits", total_audits)
+
+                        with metric_col3:
+                            unique_keywords = df_history['keyword'].nunique()
+                            st.metric("Unique Keywords", unique_keywords)
+
+                        with metric_col4:
+                            if 'date' in df_history.columns:
+                                latest_date = df_history['date'].max()
+                                st.metric("Latest Audit", latest_date.strftime('%Y-%m-%d'))
+                            else:
+                                st.metric("Latest Audit", "N/A")
+
+                        st.markdown("---")
+
+                        # Line chart: Date vs Score
+                        st.markdown("### 📈 Score Trend Over Time")
+
+                        if 'date' in df_history.columns and len(df_history) > 0:
+                            # Create line chart
+                            fig = px.line(
+                                df_history,
+                                x='date',
+                                y='score',
+                                color='keyword',
+                                markers=True,
+                                title='Content Scores Over Time',
+                                labels={'date': 'Date', 'score': 'Score', 'keyword': 'Keyword'},
+                                hover_data=['model', 'brand']
+                            )
+
+                            fig.update_layout(
+                                hovermode='x unified',
+                                xaxis_title='Date',
+                                yaxis_title='Score (0-100)',
+                                legend_title='Keywords',
+                                height=500,
+                                template='plotly_white'
+                            )
+
+                            fig.update_yaxis(range=[0, 100])
+
+                            st.plotly_chart(fig, use_container_width=True)
+                        else:
+                            st.warning("⚠️ Not enough data to display trend chart")
+
+                        st.markdown("---")
+
+                        # Raw dataframe
+                        st.markdown("### 📋 Raw Data")
+
+                        # Display dataframe with formatting
+                        st.dataframe(
+                            df_history,
+                            use_container_width=True,
+                            hide_index=True
+                        )
+
+                        # Download full history
+                        csv_history = df_history.to_csv(index=False)
+                        st.download_button(
+                            label="📥 Download Full History as CSV",
+                            data=csv_history,
+                            file_name=f"audit_history_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                            mime="text/csv"
+                        )
+
+                else:
+                    st.error(f"❌ {result}")
 
 # ============================================================================
 # FOOTER
