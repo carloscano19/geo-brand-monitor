@@ -368,6 +368,7 @@ Do not number them, just provide the raw queries one per line."""
             genai.configure(api_key=api_keys['gemini'])
             model = genai.GenerativeModel('gemini-pro')
 
+            
             # Create the full prompt
             full_prompt = f"{system_prompt}\n\nGenerate queries for: {topic}"
 
